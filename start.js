@@ -5,12 +5,13 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
-        path: "app",
+        path: ".",
         env: {
           PYTHONUNBUFFERED: "1",
           OMNIVOICE_PORT: "{{port}}",
+          HF_HUB_ENABLE_HF_TRANSFER: "1",
         },
-        message: ["python app.py"],
+        message: ["python app/app.py"],
         on: [
           {
             event: "/(http:\\/\\/[0-9.:]+)/",
