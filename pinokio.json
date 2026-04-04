@@ -1,0 +1,6 @@
+{
+  "version": "5.0",
+  "title": "OmniVoice",
+  "description": "Zero-shot multilingual TTS (600+ languages) with voice cloning and voice design — Gradio UI (app/app.py)",
+  "icon": "icon.jpg"
+}
