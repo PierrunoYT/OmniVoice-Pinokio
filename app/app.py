@@ -351,35 +351,103 @@ def _speaker_visibility_updates(num_speakers):
     return [gr.update(visible=i <= n) for i in range(1, 5)]
 
 
-def _insert_tag_js(tag: str) -> str:
-    tag_json = json.dumps(tag)
+def _tag_toolbar_html() -> str:
+    tags_json = json.dumps(NON_VERBAL_TAG_CHOICES)
     return f"""
-() => {{
-  const tag = {tag_json};
-  const active = document.activeElement;
-  if (!active) return;
-  const isTextarea = active.tagName === "TEXTAREA";
-  const isTextInput = active.tagName === "INPUT" && active.type === "text";
-  if (!isTextarea && !isTextInput) return;
+<script>
+(function() {{
+  if (window.__ovTagToolbarInit) return;
+  window.__ovTagToolbarInit = true;
 
-  const value = active.value || "";
-  const start = active.selectionStart ?? value.length;
-  const end = active.selectionEnd ?? value.length;
-  const left = value.slice(0, start);
-  const right = value.slice(end);
-  const needsLeftSpace = left.length > 0 && !/[\\s\\n]$/.test(left);
-  const needsRightSpace = right.length > 0 && !/^[\\s\\n]/.test(right);
-  const insertion = `${{needsLeftSpace ? " " : ""}}${{tag}}${{needsRightSpace ? " " : ""}}`;
-  const nextValue = left + insertion + right;
-  const caretPos = (left + insertion).length;
+  const TAGS = {tags_json};
+  let activeField = null;
 
-  active.value = nextValue;
-  active.selectionStart = caretPos;
-  active.selectionEnd = caretPos;
-  active.dispatchEvent(new Event("input", {{ bubbles: true }}));
-  active.dispatchEvent(new Event("change", {{ bubbles: true }}));
-  active.focus();
-}}
+  const isTextField = (el) => {{
+    if (!el) return false;
+    if (el.tagName === "TEXTAREA") return true;
+    return el.tagName === "INPUT" && el.type === "text";
+  }};
+
+  const getToolbar = () => {{
+    let tb = document.getElementById("ov-tag-toolbar");
+    if (tb) return tb;
+    tb = document.createElement("div");
+    tb.id = "ov-tag-toolbar";
+    tb.style.position = "fixed";
+    tb.style.zIndex = "9999";
+    tb.style.display = "none";
+    tb.style.gap = "4px";
+    tb.style.flexWrap = "wrap";
+    tb.style.padding = "4px";
+    tb.style.border = "1px solid var(--border-color-primary, #444)";
+    tb.style.borderRadius = "8px";
+    tb.style.background = "var(--block-background-fill, #1f1f1f)";
+    tb.style.maxWidth = "760px";
+
+    TAGS.forEach((tag) => {{
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = tag;
+      btn.style.fontSize = "11px";
+      btn.style.lineHeight = "1.2";
+      btn.style.padding = "3px 7px";
+      btn.style.borderRadius = "999px";
+      btn.style.border = "1px solid var(--border-color-primary, #555)";
+      btn.style.background = "var(--button-secondary-background-fill, #2a2a2a)";
+      btn.style.cursor = "pointer";
+      btn.addEventListener("mousedown", (e) => e.preventDefault());
+      btn.addEventListener("click", () => {{
+        if (!activeField || !isTextField(activeField)) return;
+        const value = activeField.value || "";
+        const start = activeField.selectionStart ?? value.length;
+        const end = activeField.selectionEnd ?? value.length;
+        const left = value.slice(0, start);
+        const right = value.slice(end);
+        const needsLeftSpace = left.length > 0 && !/[\\s\\n]$/.test(left);
+        const needsRightSpace = right.length > 0 && !/^[\\s\\n]/.test(right);
+        const insertion = `${{needsLeftSpace ? " " : ""}}${{tag}}${{needsRightSpace ? " " : ""}}`;
+        const nextValue = left + insertion + right;
+        const caretPos = (left + insertion).length;
+        activeField.value = nextValue;
+        activeField.selectionStart = caretPos;
+        activeField.selectionEnd = caretPos;
+        activeField.dispatchEvent(new Event("input", {{ bubbles: true }}));
+        activeField.dispatchEvent(new Event("change", {{ bubbles: true }}));
+        activeField.focus();
+      }});
+      tb.appendChild(btn);
+    }});
+    document.body.appendChild(tb);
+    return tb;
+  }};
+
+  const placeToolbar = () => {{
+    const tb = getToolbar();
+    if (!activeField || !isTextField(activeField)) {{
+      tb.style.display = "none";
+      return;
+    }}
+    const rect = activeField.getBoundingClientRect();
+    tb.style.display = "flex";
+    tb.style.left = `${{Math.max(8, rect.left)}}px`;
+    tb.style.top = `${{Math.min(window.innerHeight - 64, rect.bottom + 6)}}px`;
+    tb.style.maxWidth = `${{Math.max(280, rect.width)}}px`;
+  }};
+
+  document.addEventListener("focusin", (e) => {{
+    if (isTextField(e.target)) {{
+      activeField = e.target;
+      placeToolbar();
+    }} else {{
+      activeField = null;
+      placeToolbar();
+    }}
+  }});
+
+  window.addEventListener("resize", placeToolbar);
+  window.addEventListener("scroll", placeToolbar, true);
+}})();
+</script>
 """.strip()
 
 
@@ -403,18 +471,7 @@ def generate_dialogue_fn(*args, **kwargs):
 # ---------------------------------------------------------------------------
 demo = build_demo(model, CHECKPOINT, generate_fn=generate_fn)
 with demo:
-    with gr.Accordion("Quick Non-Verbal Tags", open=False):
-        gr.Markdown(
-            "Click a tag to insert it into the currently focused text field (works for clone/design and dialogue text boxes)."
-        )
-        with gr.Row():
-            for tag in NON_VERBAL_TAG_CHOICES[:7]:
-                btn = gr.Button(tag, size="sm")
-                btn.click(fn=None, inputs=None, outputs=None, js=_insert_tag_js(tag))
-        with gr.Row():
-            for tag in NON_VERBAL_TAG_CHOICES[7:]:
-                btn = gr.Button(tag, size="sm")
-                btn.click(fn=None, inputs=None, outputs=None, js=_insert_tag_js(tag))
+    gr.HTML(_tag_toolbar_html())
     with gr.Tabs():
         with gr.Tab("Dialogue"):
             gr.Markdown(
@@ -427,7 +484,7 @@ with demo:
                 placeholder="[Speaker_1]: First line\n[Speaker_2]: Reply...",
             )
             gr.Markdown(
-                "Tip: focus a text box and click a Quick Non-Verbal Tag button above. You can still type pronunciation controls manually (e.g. CMU tokens for English)."
+                "Tip: click into any text field and use the compact tag chips shown right below it. You can still type pronunciation controls manually (e.g. CMU tokens for English)."
             )
             with gr.Row():
                 d_language = gr.Dropdown(
