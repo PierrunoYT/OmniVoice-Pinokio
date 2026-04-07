@@ -52,6 +52,22 @@ LANGUAGE_CHOICES = [
     ("Turkish (tr)", "tr"),
 ]
 
+NON_VERBAL_TAG_CHOICES = [
+    "[laughter]",
+    "[sigh]",
+    "[confirmation-en]",
+    "[question-en]",
+    "[question-ah]",
+    "[question-oh]",
+    "[question-ei]",
+    "[question-yi]",
+    "[surprise-ah]",
+    "[surprise-oh]",
+    "[surprise-wa]",
+    "[surprise-yo]",
+    "[dissatisfaction-hnn]",
+]
+
 
 def _resolve_device(explicit: str | None) -> str:
     if explicit:
@@ -304,6 +320,16 @@ def _speaker_visibility_updates(num_speakers):
     return [gr.update(visible=i <= n) for i in range(1, 5)]
 
 
+def _append_selected_tag(script: str, selected_tag: str):
+    current = script or ""
+    if not selected_tag:
+        return current, None
+    if not current:
+        return selected_tag, None
+    sep = "" if current.endswith((" ", "\n")) else " "
+    return f"{current}{sep}{selected_tag}", None
+
+
 # ---------------------------------------------------------------------------
 # ZeroGPU wrapper
 # ---------------------------------------------------------------------------
@@ -334,6 +360,17 @@ with demo:
                 lines=10,
                 value="[Speaker_1]: Hello, I'm speaker one.\n[Speaker_2]: Hi! I'm speaker two.",
                 placeholder="[Speaker_1]: First line\n[Speaker_2]: Reply...",
+            )
+            with gr.Row():
+                d_tag_picker = gr.Dropdown(
+                    label="Non-Verbal Tag (optional)",
+                    choices=NON_VERBAL_TAG_CHOICES,
+                    value=None,
+                    allow_custom_value=False,
+                )
+                d_insert_tag = gr.Button("Insert Selected Tag")
+            gr.Markdown(
+                "Tip: tags are inserted into the script text. You can also type pronunciation controls manually (e.g. CMU tokens for English)."
             )
             with gr.Row():
                 d_language = gr.Dropdown(
@@ -413,6 +450,11 @@ with demo:
                 fn=_speaker_visibility_updates,
                 inputs=[d_num_speakers],
                 outputs=speaker_boxes,
+            )
+            d_insert_tag.click(
+                fn=_append_selected_tag,
+                inputs=[script, d_tag_picker],
+                outputs=[script, d_tag_picker],
             )
             d_run.click(
                 fn=generate_dialogue_fn,
