@@ -8,6 +8,7 @@ Same structure as the official Space; locally, ``spaces`` is stubbed if missing,
 
 import os
 import re
+import json
 from typing import Any, Dict
 
 import gradio as gr
@@ -320,14 +321,36 @@ def _speaker_visibility_updates(num_speakers):
     return [gr.update(visible=i <= n) for i in range(1, 5)]
 
 
-def _append_selected_tag(script: str, selected_tag: str):
-    current = script or ""
-    if not selected_tag:
-        return current, None
-    if not current:
-        return selected_tag, None
-    sep = "" if current.endswith((" ", "\n")) else " "
-    return f"{current}{sep}{selected_tag}", None
+def _insert_tag_js(tag: str) -> str:
+    tag_json = json.dumps(tag)
+    return f"""
+() => {{
+  const tag = {tag_json};
+  const active = document.activeElement;
+  if (!active) return;
+  const isTextarea = active.tagName === "TEXTAREA";
+  const isTextInput = active.tagName === "INPUT" && active.type === "text";
+  if (!isTextarea && !isTextInput) return;
+
+  const value = active.value || "";
+  const start = active.selectionStart ?? value.length;
+  const end = active.selectionEnd ?? value.length;
+  const left = value.slice(0, start);
+  const right = value.slice(end);
+  const needsLeftSpace = left.length > 0 && !/[\\s\\n]$/.test(left);
+  const needsRightSpace = right.length > 0 && !/^[\\s\\n]/.test(right);
+  const insertion = `${{needsLeftSpace ? " " : ""}}${{tag}}${{needsRightSpace ? " " : ""}}`;
+  const nextValue = left + insertion + right;
+  const caretPos = (left + insertion).length;
+
+  active.value = nextValue;
+  active.selectionStart = caretPos;
+  active.selectionEnd = caretPos;
+  active.dispatchEvent(new Event("input", {{ bubbles: true }}));
+  active.dispatchEvent(new Event("change", {{ bubbles: true }}));
+  active.focus();
+}}
+""".strip()
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +373,18 @@ def generate_dialogue_fn(*args, **kwargs):
 # ---------------------------------------------------------------------------
 demo = build_demo(model, CHECKPOINT, generate_fn=generate_fn)
 with demo:
+    with gr.Accordion("Quick Non-Verbal Tags", open=False):
+        gr.Markdown(
+            "Click a tag to insert it into the currently focused text field (works for clone/design and dialogue text boxes)."
+        )
+        with gr.Row():
+            for tag in NON_VERBAL_TAG_CHOICES[:7]:
+                btn = gr.Button(tag, size="sm")
+                btn.click(fn=None, inputs=None, outputs=None, js=_insert_tag_js(tag))
+        with gr.Row():
+            for tag in NON_VERBAL_TAG_CHOICES[7:]:
+                btn = gr.Button(tag, size="sm")
+                btn.click(fn=None, inputs=None, outputs=None, js=_insert_tag_js(tag))
     with gr.Tabs():
         with gr.Tab("Dialogue"):
             gr.Markdown(
@@ -361,16 +396,8 @@ with demo:
                 value="[Speaker_1]: Hello, I'm speaker one.\n[Speaker_2]: Hi! I'm speaker two.",
                 placeholder="[Speaker_1]: First line\n[Speaker_2]: Reply...",
             )
-            with gr.Row():
-                d_tag_picker = gr.Dropdown(
-                    label="Non-Verbal Tag (optional)",
-                    choices=NON_VERBAL_TAG_CHOICES,
-                    value=None,
-                    allow_custom_value=False,
-                )
-                d_insert_tag = gr.Button("Insert Selected Tag")
             gr.Markdown(
-                "Tip: tags are inserted into the script text. You can also type pronunciation controls manually (e.g. CMU tokens for English)."
+                "Tip: focus a text box and click a Quick Non-Verbal Tag button above. You can still type pronunciation controls manually (e.g. CMU tokens for English)."
             )
             with gr.Row():
                 d_language = gr.Dropdown(
@@ -450,11 +477,6 @@ with demo:
                 fn=_speaker_visibility_updates,
                 inputs=[d_num_speakers],
                 outputs=speaker_boxes,
-            )
-            d_insert_tag.click(
-                fn=_append_selected_tag,
-                inputs=[script, d_tag_picker],
-                outputs=[script, d_tag_picker],
             )
             d_run.click(
                 fn=generate_dialogue_fn,
