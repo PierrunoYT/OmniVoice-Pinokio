@@ -351,10 +351,9 @@ def _speaker_visibility_updates(num_speakers):
     return [gr.update(visible=i <= n) for i in range(1, 5)]
 
 
-def _tag_toolbar_html() -> str:
+def _tag_toolbar_js() -> str:
     tags_json = json.dumps(NON_VERBAL_TAG_CHOICES)
     return f"""
-<script>
 (function() {{
   if (window.__ovTagToolbarInit) return;
   window.__ovTagToolbarInit = true;
@@ -447,7 +446,6 @@ def _tag_toolbar_html() -> str:
   window.addEventListener("resize", placeToolbar);
   window.addEventListener("scroll", placeToolbar, true);
 }})();
-</script>
 """.strip()
 
 
@@ -471,7 +469,7 @@ def generate_dialogue_fn(*args, **kwargs):
 # ---------------------------------------------------------------------------
 demo = build_demo(model, CHECKPOINT, generate_fn=generate_fn)
 with demo:
-    gr.HTML(_tag_toolbar_html())
+    demo.load(fn=None, inputs=None, outputs=None, js=_tag_toolbar_js())
     with gr.Tabs():
         with gr.Tab("Dialogue"):
             gr.Markdown(
