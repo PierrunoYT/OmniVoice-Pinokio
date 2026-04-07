@@ -222,15 +222,19 @@ def _generate_dialogue(
     s1_audio,
     s1_ref_text,
     s1_instruct,
+    s1_language,
     s2_audio,
     s2_ref_text,
     s2_instruct,
+    s2_language,
     s3_audio,
     s3_ref_text,
     s3_instruct,
+    s3_language,
     s4_audio,
     s4_ref_text,
     s4_instruct,
+    s4_language,
 ):
     if not script or not script.strip():
         return None, "Please enter dialogue text."
@@ -241,10 +245,30 @@ def _generate_dialogue(
 
     n = int(num_speakers or 2)
     speaker_data = {
-        1: {"audio": s1_audio, "ref_text": s1_ref_text, "instruct": s1_instruct},
-        2: {"audio": s2_audio, "ref_text": s2_ref_text, "instruct": s2_instruct},
-        3: {"audio": s3_audio, "ref_text": s3_ref_text, "instruct": s3_instruct},
-        4: {"audio": s4_audio, "ref_text": s4_ref_text, "instruct": s4_instruct},
+        1: {
+            "audio": s1_audio,
+            "ref_text": s1_ref_text,
+            "instruct": s1_instruct,
+            "language": s1_language,
+        },
+        2: {
+            "audio": s2_audio,
+            "ref_text": s2_ref_text,
+            "instruct": s2_instruct,
+            "language": s2_language,
+        },
+        3: {
+            "audio": s3_audio,
+            "ref_text": s3_ref_text,
+            "instruct": s3_instruct,
+            "language": s3_language,
+        },
+        4: {
+            "audio": s4_audio,
+            "ref_text": s4_ref_text,
+            "instruct": s4_instruct,
+            "language": s4_language,
+        },
     }
 
     gen_config = OmniVoiceGenerationConfig(
@@ -266,9 +290,15 @@ def _generate_dialogue(
             )
 
         speaker_cfg = speaker_data.get(speaker_id, {})
+        speaker_lang = speaker_cfg.get("language")
+        turn_lang = (
+            speaker_lang
+            if (speaker_lang and speaker_lang != "Auto")
+            else lang
+        )
         kw: Dict[str, Any] = {
             "text": line_text,
-            "language": lang,
+            "language": turn_lang,
             "generation_config": gen_config,
         }
         if speed is not None and float(speed) != 1.0:
@@ -465,10 +495,25 @@ with demo:
                             lines=2,
                             placeholder="e.g. female, low pitch, british accent",
                         )
+                        lang = gr.Dropdown(
+                            label=f"Speaker {i} Language",
+                            choices=LANGUAGE_CHOICES,
+                            value="Auto",
+                            allow_custom_value=True,
+                            info="Auto uses the global language setting.",
+                        )
                         speaker_boxes.append(col)
                         speaker_audio.append(a)
                         speaker_ref.append(r)
                         speaker_instr.append(ins)
+                        if i == 1:
+                            s1_lang = lang
+                        elif i == 2:
+                            s2_lang = lang
+                        elif i == 3:
+                            s3_lang = lang
+                        else:
+                            s4_lang = lang
             d_run = gr.Button("Generate Dialogue", variant="primary")
             d_audio_out = gr.Audio(label="Dialogue Output")
             d_status = gr.Textbox(label="Status", interactive=False)
@@ -495,15 +540,19 @@ with demo:
                     speaker_audio[0],
                     speaker_ref[0],
                     speaker_instr[0],
+                    s1_lang,
                     speaker_audio[1],
                     speaker_ref[1],
                     speaker_instr[1],
+                    s2_lang,
                     speaker_audio[2],
                     speaker_ref[2],
                     speaker_instr[2],
+                    s3_lang,
                     speaker_audio[3],
                     speaker_ref[3],
                     speaker_instr[3],
+                    s4_lang,
                 ],
                 outputs=[d_audio_out, d_status],
                 api_name="generate_dialogue",
