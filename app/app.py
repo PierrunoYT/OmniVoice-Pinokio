@@ -7,8 +7,10 @@ Same structure as the official Space; locally, ``spaces`` is stubbed if missing,
 """
 
 import os
+import re
 from typing import Any, Dict
 
+import gradio as gr
 import numpy as np
 import torch
 
@@ -147,6 +149,142 @@ def _gen_core(
     return (sampling_rate, waveform), "Done."
 
 
+def _parse_dialogue_script(script: str):
+    tag_re = re.compile(r"^\s*\[speaker_(\d+)\]:\s*(.*)$", re.IGNORECASE)
+    turns = []
+    current_speaker = None
+    current_parts = []
+    for raw in script.strip().splitlines():
+        match = tag_re.match(raw)
+        if match:
+            if current_speaker is not None and current_parts:
+                turns.append((current_speaker, " ".join(current_parts).strip()))
+            current_speaker = int(match.group(1))
+            initial_text = match.group(2).strip()
+            current_parts = [initial_text] if initial_text else []
+            continue
+        stripped = raw.strip()
+        if stripped and current_speaker is not None:
+            current_parts.append(stripped)
+    if current_speaker is not None and current_parts:
+        turns.append((current_speaker, " ".join(current_parts).strip()))
+    return turns
+
+
+def _generate_dialogue(
+    script,
+    language,
+    num_speakers,
+    num_step,
+    guidance_scale,
+    denoise,
+    speed,
+    duration,
+    pause_between_speakers,
+    preprocess_prompt,
+    postprocess_output,
+    s1_audio,
+    s1_ref_text,
+    s1_instruct,
+    s2_audio,
+    s2_ref_text,
+    s2_instruct,
+    s3_audio,
+    s3_ref_text,
+    s3_instruct,
+    s4_audio,
+    s4_ref_text,
+    s4_instruct,
+):
+    if not script or not script.strip():
+        return None, "Please enter dialogue text."
+
+    turns = _parse_dialogue_script(script)
+    if not turns:
+        return None, "No valid dialogue lines found. Use [Speaker_N]: text format."
+
+    n = int(num_speakers or 2)
+    speaker_data = {
+        1: {"audio": s1_audio, "ref_text": s1_ref_text, "instruct": s1_instruct},
+        2: {"audio": s2_audio, "ref_text": s2_ref_text, "instruct": s2_instruct},
+        3: {"audio": s3_audio, "ref_text": s3_ref_text, "instruct": s3_instruct},
+        4: {"audio": s4_audio, "ref_text": s4_ref_text, "instruct": s4_instruct},
+    }
+
+    gen_config = OmniVoiceGenerationConfig(
+        num_step=int(num_step or 32),
+        guidance_scale=float(guidance_scale) if guidance_scale is not None else 2.0,
+        denoise=bool(denoise) if denoise is not None else True,
+        preprocess_prompt=bool(preprocess_prompt),
+        postprocess_output=bool(postprocess_output),
+    )
+    lang = language if (language and language != "Auto") else None
+
+    prompt_cache = {}
+    audio_turns = []
+    for idx, (speaker_id, line_text) in enumerate(turns, start=1):
+        if speaker_id < 1 or speaker_id > n:
+            return (
+                None,
+                f"Line {idx} uses [Speaker_{speaker_id}], but active speakers are 1..{n}.",
+            )
+
+        speaker_cfg = speaker_data.get(speaker_id, {})
+        kw: Dict[str, Any] = {
+            "text": line_text,
+            "language": lang,
+            "generation_config": gen_config,
+        }
+        if speed is not None and float(speed) != 1.0:
+            kw["speed"] = float(speed)
+        if duration is not None and float(duration) > 0:
+            kw["duration"] = float(duration)
+
+        ref_audio = speaker_cfg.get("audio")
+        ref_text = (speaker_cfg.get("ref_text") or "").strip()
+        instruct = (speaker_cfg.get("instruct") or "").strip()
+
+        if ref_audio:
+            if speaker_id not in prompt_cache:
+                prompt_cache[speaker_id] = model.create_voice_clone_prompt(
+                    ref_audio=ref_audio, ref_text=ref_text or None
+                )
+            kw["voice_clone_prompt"] = prompt_cache[speaker_id]
+        if instruct:
+            kw["instruct"] = instruct
+
+        try:
+            audio = model.generate(**kw)
+        except Exception as e:
+            return None, f"Error on speaker {speaker_id}, line {idx}: {type(e).__name__}: {e}"
+        t = audio[0].squeeze(0)
+        if hasattr(t, "detach"):
+            t = t.detach().cpu()
+        audio_turns.append(t.numpy().astype(np.float32))
+
+    if not audio_turns:
+        return None, "No audio generated."
+
+    if float(pause_between_speakers or 0) > 0:
+        silence = np.zeros(
+            int(float(pause_between_speakers) * sampling_rate), dtype=np.float32
+        )
+        merged = audio_turns[0]
+        for turn in audio_turns[1:]:
+            merged = np.concatenate([merged, silence, turn], axis=0)
+    else:
+        merged = np.concatenate(audio_turns, axis=0)
+
+    waveform = np.clip(merged, -1.0, 1.0)
+    waveform = (waveform * 32767).astype(np.int16)
+    return (sampling_rate, waveform), f"Done. Generated {len(turns)} line(s)."
+
+
+def _speaker_visibility_updates(num_speakers):
+    n = int(num_speakers or 2)
+    return [gr.update(visible=i <= n) for i in range(1, 5)]
+
+
 # ---------------------------------------------------------------------------
 # ZeroGPU wrapper
 # ---------------------------------------------------------------------------
@@ -157,10 +295,134 @@ def generate_fn(*args, **kwargs):
     return _gen_core(*args, **kwargs)
 
 
+@spaces.GPU(duration=120)
+def generate_dialogue_fn(*args, **kwargs):
+    return _generate_dialogue(*args, **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Build and launch demo
 # ---------------------------------------------------------------------------
 demo = build_demo(model, CHECKPOINT, generate_fn=generate_fn)
+with demo:
+    with gr.Tabs():
+        with gr.Tab("Dialogue"):
+            gr.Markdown(
+                "Generate multi-speaker dialogue with `[Speaker_N]:` tags and optional per-speaker voice cloning."
+            )
+            script = gr.Textbox(
+                label="Dialogue Script",
+                lines=10,
+                value="[Speaker_1]: Hello, I'm speaker one.\n[Speaker_2]: Hi! I'm speaker two.",
+                placeholder="[Speaker_1]: First line\n[Speaker_2]: Reply...",
+            )
+            with gr.Row():
+                d_language = gr.Textbox(
+                    label="Language",
+                    value="Auto",
+                    placeholder="Auto or language id/name",
+                )
+                d_num_speakers = gr.Slider(
+                    minimum=2, maximum=4, step=1, value=2, label="Number of Speakers"
+                )
+                d_pause = gr.Slider(
+                    minimum=0.0,
+                    maximum=2.0,
+                    step=0.1,
+                    value=0.3,
+                    label="Pause Between Speakers (seconds)",
+                )
+            with gr.Accordion("Generation Settings", open=False):
+                with gr.Row():
+                    d_num_step = gr.Slider(
+                        minimum=4, maximum=64, step=1, value=32, label="num_step"
+                    )
+                    d_guidance = gr.Slider(
+                        minimum=0.0,
+                        maximum=10.0,
+                        step=0.1,
+                        value=2.0,
+                        label="guidance_scale",
+                    )
+                    d_speed = gr.Slider(
+                        minimum=0.5, maximum=2.0, step=0.1, value=1.0, label="speed"
+                    )
+                    d_duration = gr.Slider(
+                        minimum=0.0,
+                        maximum=30.0,
+                        step=0.5,
+                        value=0.0,
+                        label="duration (0 = auto)",
+                    )
+                with gr.Row():
+                    d_denoise = gr.Checkbox(value=True, label="denoise")
+                    d_pre = gr.Checkbox(value=True, label="preprocess_prompt")
+                    d_post = gr.Checkbox(value=True, label="postprocess_output")
+            speaker_boxes = []
+            speaker_audio = []
+            speaker_ref = []
+            speaker_instr = []
+            with gr.Row():
+                for i in range(1, 5):
+                    with gr.Column(visible=i <= 2) as col:
+                        gr.Markdown(f"**Speaker {i}**")
+                        a = gr.Audio(
+                            label=f"Speaker {i} Reference Audio (optional)",
+                            type="filepath",
+                        )
+                        r = gr.Textbox(
+                            label=f"Speaker {i} Reference Text (optional)",
+                            lines=2,
+                            placeholder="Leave empty for auto ASR if enabled.",
+                        )
+                        ins = gr.Textbox(
+                            label=f"Speaker {i} Style Instruction (optional)",
+                            lines=2,
+                            placeholder="e.g. female, low pitch, british accent",
+                        )
+                        speaker_boxes.append(col)
+                        speaker_audio.append(a)
+                        speaker_ref.append(r)
+                        speaker_instr.append(ins)
+            d_run = gr.Button("Generate Dialogue", variant="primary")
+            d_audio_out = gr.Audio(label="Dialogue Output")
+            d_status = gr.Textbox(label="Status", interactive=False)
+
+            d_num_speakers.change(
+                fn=_speaker_visibility_updates,
+                inputs=[d_num_speakers],
+                outputs=speaker_boxes,
+            )
+            d_run.click(
+                fn=generate_dialogue_fn,
+                inputs=[
+                    script,
+                    d_language,
+                    d_num_speakers,
+                    d_num_step,
+                    d_guidance,
+                    d_denoise,
+                    d_speed,
+                    d_duration,
+                    d_pause,
+                    d_pre,
+                    d_post,
+                    speaker_audio[0],
+                    speaker_ref[0],
+                    speaker_instr[0],
+                    speaker_audio[1],
+                    speaker_ref[1],
+                    speaker_instr[1],
+                    speaker_audio[2],
+                    speaker_ref[2],
+                    speaker_instr[2],
+                    speaker_audio[3],
+                    speaker_ref[3],
+                    speaker_instr[3],
+                ],
+                outputs=[d_audio_out, d_status],
+                api_name="generate_dialogue",
+            )
 
 if __name__ == "__main__":
     launch_kw = {"inbrowser": False}
