@@ -14,5 +14,15 @@ module.exports = {
         message: "uv pip install -U -r app/requirements.txt",
       },
     },
+    {
+      method: "script.start",
+      params: {
+        uri: "torch.js",
+        params: {
+          venv: "env",
+          path: ".",
+        },
+      },
+    },
   ],
 }
