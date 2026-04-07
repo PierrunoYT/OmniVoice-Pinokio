@@ -8,7 +8,6 @@ Same structure as the official Space; locally, ``spaces`` is stubbed if missing,
 
 import os
 import re
-import json
 from typing import Any, Dict
 
 import gradio as gr
@@ -351,102 +350,14 @@ def _speaker_visibility_updates(num_speakers):
     return [gr.update(visible=i <= n) for i in range(1, 5)]
 
 
-def _tag_toolbar_js() -> str:
-    tags_json = json.dumps(NON_VERBAL_TAG_CHOICES)
-    return f"""
-(function() {{
-  if (window.__ovTagToolbarInit) return;
-  window.__ovTagToolbarInit = true;
-
-  const TAGS = {tags_json};
-  let activeField = null;
-
-  const isTextField = (el) => {{
-    if (!el) return false;
-    if (el.tagName === "TEXTAREA") return true;
-    return el.tagName === "INPUT" && el.type === "text";
-  }};
-
-  const getToolbar = () => {{
-    let tb = document.getElementById("ov-tag-toolbar");
-    if (tb) return tb;
-    tb = document.createElement("div");
-    tb.id = "ov-tag-toolbar";
-    tb.style.position = "fixed";
-    tb.style.zIndex = "9999";
-    tb.style.display = "none";
-    tb.style.gap = "4px";
-    tb.style.flexWrap = "wrap";
-    tb.style.padding = "4px";
-    tb.style.border = "1px solid var(--border-color-primary, #444)";
-    tb.style.borderRadius = "8px";
-    tb.style.background = "var(--block-background-fill, #1f1f1f)";
-    tb.style.maxWidth = "760px";
-
-    TAGS.forEach((tag) => {{
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = tag;
-      btn.style.fontSize = "11px";
-      btn.style.lineHeight = "1.2";
-      btn.style.padding = "3px 7px";
-      btn.style.borderRadius = "999px";
-      btn.style.border = "1px solid var(--border-color-primary, #555)";
-      btn.style.background = "var(--button-secondary-background-fill, #2a2a2a)";
-      btn.style.cursor = "pointer";
-      btn.addEventListener("mousedown", (e) => e.preventDefault());
-      btn.addEventListener("click", () => {{
-        if (!activeField || !isTextField(activeField)) return;
-        const value = activeField.value || "";
-        const start = activeField.selectionStart ?? value.length;
-        const end = activeField.selectionEnd ?? value.length;
-        const left = value.slice(0, start);
-        const right = value.slice(end);
-        const needsLeftSpace = left.length > 0 && !/[\\s\\n]$/.test(left);
-        const needsRightSpace = right.length > 0 && !/^[\\s\\n]/.test(right);
-        const insertion = `${{needsLeftSpace ? " " : ""}}${{tag}}${{needsRightSpace ? " " : ""}}`;
-        const nextValue = left + insertion + right;
-        const caretPos = (left + insertion).length;
-        activeField.value = nextValue;
-        activeField.selectionStart = caretPos;
-        activeField.selectionEnd = caretPos;
-        activeField.dispatchEvent(new Event("input", {{ bubbles: true }}));
-        activeField.dispatchEvent(new Event("change", {{ bubbles: true }}));
-        activeField.focus();
-      }});
-      tb.appendChild(btn);
-    }});
-    document.body.appendChild(tb);
-    return tb;
-  }};
-
-  const placeToolbar = () => {{
-    const tb = getToolbar();
-    if (!activeField || !isTextField(activeField)) {{
-      tb.style.display = "none";
-      return;
-    }}
-    const rect = activeField.getBoundingClientRect();
-    tb.style.display = "flex";
-    tb.style.left = `${{Math.max(8, rect.left)}}px`;
-    tb.style.top = `${{Math.min(window.innerHeight - 64, rect.bottom + 6)}}px`;
-    tb.style.maxWidth = `${{Math.max(280, rect.width)}}px`;
-  }};
-
-  document.addEventListener("focusin", (e) => {{
-    if (isTextField(e.target)) {{
-      activeField = e.target;
-      placeToolbar();
-    }} else {{
-      activeField = null;
-      placeToolbar();
-    }}
-  }});
-
-  window.addEventListener("resize", placeToolbar);
-  window.addEventListener("scroll", placeToolbar, true);
-}})();
-""".strip()
+def _append_selected_tag(text_value: str, selected_tag: str):
+    current = text_value or ""
+    if not selected_tag:
+        return current, None
+    if not current:
+        return selected_tag, None
+    sep = "" if current.endswith((" ", "\n")) else " "
+    return f"{current}{sep}{selected_tag}", None
 
 
 # ---------------------------------------------------------------------------
@@ -469,7 +380,6 @@ def generate_dialogue_fn(*args, **kwargs):
 # ---------------------------------------------------------------------------
 demo = build_demo(model, CHECKPOINT, generate_fn=generate_fn)
 with demo:
-    demo.load(fn=None, inputs=None, outputs=None, js=_tag_toolbar_js())
     with gr.Tabs():
         with gr.Tab("Dialogue"):
             gr.Markdown(
@@ -481,8 +391,17 @@ with demo:
                 value="[Speaker_1]: Hello, I'm speaker one.\n[Speaker_2]: Hi! I'm speaker two.",
                 placeholder="[Speaker_1]: First line\n[Speaker_2]: Reply...",
             )
+            with gr.Row():
+                d_tag_picker = gr.Dropdown(
+                    label="Insert Tag",
+                    choices=NON_VERBAL_TAG_CHOICES,
+                    value=None,
+                    allow_custom_value=False,
+                    scale=5,
+                )
+                d_insert_tag = gr.Button("Insert", scale=1, min_width=80)
             gr.Markdown(
-                "Tip: click into any text field and use the compact tag chips shown right below it. You can still type pronunciation controls manually (e.g. CMU tokens for English)."
+                "Tip: tag controls are placed next to the Dialogue Script input. You can still type pronunciation controls manually (e.g. CMU tokens for English)."
             )
             with gr.Row():
                 d_language = gr.Dropdown(
@@ -577,6 +496,11 @@ with demo:
                 fn=_speaker_visibility_updates,
                 inputs=[d_num_speakers],
                 outputs=speaker_boxes,
+            )
+            d_insert_tag.click(
+                fn=_append_selected_tag,
+                inputs=[script, d_tag_picker],
+                outputs=[script, d_tag_picker],
             )
             d_run.click(
                 fn=generate_dialogue_fn,
