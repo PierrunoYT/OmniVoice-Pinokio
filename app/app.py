@@ -360,6 +360,38 @@ def _append_selected_tag(text_value: str, selected_tag: str):
     return f"{current}{sep}{selected_tag}", None
 
 
+def _insert_tag_into_focused_js() -> str:
+    return """
+(selectedTag) => {
+  if (!selectedTag) return null;
+  const active = document.activeElement;
+  if (!active) return null;
+  const isTextarea = active.tagName === "TEXTAREA";
+  const isTextInput = active.tagName === "INPUT" && active.type === "text";
+  if (!isTextarea && !isTextInput) return null;
+
+  const value = active.value || "";
+  const start = active.selectionStart ?? value.length;
+  const end = active.selectionEnd ?? value.length;
+  const left = value.slice(0, start);
+  const right = value.slice(end);
+  const needsLeftSpace = left.length > 0 && !/[\\s\\n]$/.test(left);
+  const needsRightSpace = right.length > 0 && !/^[\\s\\n]/.test(right);
+  const insertion = `${needsLeftSpace ? " " : ""}${selectedTag}${needsRightSpace ? " " : ""}`;
+  const nextValue = left + insertion + right;
+  const caretPos = (left + insertion).length;
+
+  active.value = nextValue;
+  active.selectionStart = caretPos;
+  active.selectionEnd = caretPos;
+  active.dispatchEvent(new Event("input", { bubbles: true }));
+  active.dispatchEvent(new Event("change", { bubbles: true }));
+  active.focus();
+  return null;
+}
+""".strip()
+
+
 # ---------------------------------------------------------------------------
 # ZeroGPU wrapper
 # ---------------------------------------------------------------------------
@@ -380,6 +412,21 @@ def generate_dialogue_fn(*args, **kwargs):
 # ---------------------------------------------------------------------------
 demo = build_demo(model, CHECKPOINT, generate_fn=generate_fn)
 with demo:
+    with gr.Row():
+        g_tag_picker = gr.Dropdown(
+            label="Quick Tag Insert (Single TTS + Dialogue)",
+            choices=NON_VERBAL_TAG_CHOICES,
+            value=None,
+            allow_custom_value=False,
+            scale=5,
+        )
+        g_insert_tag = gr.Button("Insert Into Focused Text Box", scale=2, min_width=180)
+    g_insert_tag.click(
+        fn=None,
+        inputs=[g_tag_picker],
+        outputs=[g_tag_picker],
+        js=_insert_tag_into_focused_js(),
+    )
     with gr.Tabs():
         with gr.Tab("Dialogue"):
             gr.Markdown(
