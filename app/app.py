@@ -33,6 +33,25 @@ except ImportError:
 from omnivoice import OmniVoice, OmniVoiceGenerationConfig
 from omnivoice.cli.demo import build_demo
 
+LANGUAGE_CHOICES = [
+    ("Auto", "Auto"),
+    ("Arabic (ar)", "ar"),
+    ("Chinese (zh)", "zh"),
+    ("Dutch (nl)", "nl"),
+    ("English (en)", "en"),
+    ("French (fr)", "fr"),
+    ("German (de)", "de"),
+    ("Hindi (hi)", "hi"),
+    ("Italian (it)", "it"),
+    ("Japanese (ja)", "ja"),
+    ("Korean (ko)", "ko"),
+    ("Polish (pl)", "pl"),
+    ("Portuguese (pt)", "pt"),
+    ("Russian (ru)", "ru"),
+    ("Spanish (es)", "es"),
+    ("Turkish (tr)", "tr"),
+]
+
 
 def _resolve_device(explicit: str | None) -> str:
     if explicit:
@@ -317,10 +336,12 @@ with demo:
                 placeholder="[Speaker_1]: First line\n[Speaker_2]: Reply...",
             )
             with gr.Row():
-                d_language = gr.Textbox(
+                d_language = gr.Dropdown(
                     label="Language",
+                    choices=LANGUAGE_CHOICES,
                     value="Auto",
-                    placeholder="Auto or language id/name",
+                    allow_custom_value=True,
+                    info="Pick a language code or type a custom value.",
                 )
                 d_num_speakers = gr.Slider(
                     minimum=2, maximum=4, step=1, value=2, label="Number of Speakers"
