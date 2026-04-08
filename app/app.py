@@ -5,18 +5,26 @@ Rewritten from scratch for clarity.
 """
 
 import os
-import gradio as gr
-import torch
-import numpy as np
+import re
+import warnings
 
-# Try to import spaces (ZeroGPU), stub out if missing for local development.
+import gradio as gr
+import numpy as np
+import torch
+
 try:
     import spaces
 except ImportError:
     class _GPU:
-        def __init__(self, duration=60): pass
-        def __call__(self, fn): return fn
-    class _Spaces: GPU = _GPU
+        def __init__(self, duration=60):
+            pass
+
+        def __call__(self, fn):
+            return fn
+
+    class _Spaces:
+        GPU = _GPU
+
     spaces = _Spaces()
 
 from omnivoice import OmniVoice, OmniVoiceGenerationConfig
@@ -46,17 +54,29 @@ TAG_CHOICES = [
     "[surprise-ah]", "[surprise-oh]", "[surprise-wa]", "[surprise-yo]", "[dissatisfaction-hnn]",
 ]
 
+_VALID_DEVICES = {"cuda", "mps", "cpu"}
+
+
 def resolve_device(env_var=None):
     if env_var:
-        return env_var
+        if env_var not in _VALID_DEVICES:
+            warnings.warn(
+                f"OMNIVOICE_DEVICE={env_var!r} is not a valid device "
+                f"(expected one of {_VALID_DEVICES}). Falling back to auto-detection.",
+                stacklevel=2,
+            )
+        else:
+            return env_var
     if torch.cuda.is_available():
         return "cuda"
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
 
+
 def resolve_dtype(device):
     return torch.float16 if device == "cuda" else torch.float32
+
 
 def env_bool(name, default=True):
     val = os.environ.get(name)
@@ -64,12 +84,14 @@ def env_bool(name, default=True):
         return default
     return val.strip().lower() not in ["false", "0", "no", "off"]
 
+
 def env_int(*names):
     for name in names:
         raw = os.environ.get(name)
         if raw is not None and str(raw).strip() != "":
             return int(str(raw).strip())
     return None
+
 
 # Model loading
 ckpt = os.environ.get("OMNIVOICE_MODEL", "k2-fsa/OmniVoice")
@@ -81,6 +103,7 @@ print(f"Loading {ckpt} on {device} ...")
 model = OmniVoice.from_pretrained(ckpt, device_map=device, dtype=dtype, load_asr=load_asr)
 sampling_rate = model.sampling_rate
 print("Model ready.")
+
 
 def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise, speed, duration, preproc, postproc, mode, ref_text=None):
     if not text or not str(text).strip():
@@ -108,12 +131,15 @@ def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise,
         audio = model.generate(**args)
     except Exception as e:
         return None, f"Generation error: {type(e).__name__}: {e}"
+    if not audio:
+        return None, "Generation error: model returned no audio."
     arr = audio[0].squeeze(0)
-    if hasattr(arr, "detach"): arr = arr.detach().cpu()
+    if hasattr(arr, "detach"):
+        arr = arr.detach().cpu()
     wav = np.clip(arr.numpy(), -1.0, 1.0)
     return (sampling_rate, (wav * 32767).astype(np.int16)), "Done."
 
-import re
+
 def parse_dialogue(script):
     PATTERN = re.compile(r"^\s*\[speaker_(\d+)\]:\s*(.*)$", re.I)
     results = []
@@ -130,9 +156,10 @@ def parse_dialogue(script):
         line = line.strip()
         if line and cur_speaker is not None:
             cur_lines.append(line)
-    if cur_speaker and cur_lines:
+    if cur_speaker is not None and cur_lines:
         results.append((cur_speaker, " ".join(cur_lines).strip()))
     return results
+
 
 def synthesize_dialogue(
     script, language, num_speakers, num_step, guidance, denoise, speed, duration,
@@ -164,14 +191,16 @@ def synthesize_dialogue(
     )
     prompts, audios = {}, []
     for idx, (spk, line) in enumerate(turns, 1):
-        if spk not in range(1, n+1):
+        if not (1 <= spk <= n):
             return None, f"Line {idx}: Speaker {spk} not in 1..{n}"
         cfg = speakers.get(spk, {})
         lang = cfg.get("lang")
         turn_lang = lang if lang and lang != "Auto" else global_lang
         kw = dict(text=line, language=turn_lang, generation_config=gen_conf)
-        if speed and float(speed) != 1.0: kw["speed"] = float(speed)
-        if duration and float(duration) > 0: kw["duration"] = float(duration)
+        if speed and float(speed) != 1.0:
+            kw["speed"] = float(speed)
+        if duration and float(duration) > 0:
+            kw["duration"] = float(duration)
         ref_audio = cfg.get("audio")
         ref_text = (cfg.get("ref") or "").strip()
         instr = (cfg.get("instr") or "").strip()
@@ -179,34 +208,43 @@ def synthesize_dialogue(
             if spk not in prompts:
                 prompts[spk] = model.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text or None)
             kw["voice_clone_prompt"] = prompts[spk]
-        if instr: kw["instruct"] = instr
+        if instr:
+            kw["instruct"] = instr
         try:
             result = model.generate(**kw)
         except Exception as e:
             return None, f"Speaker {spk}, line {idx}: {type(e).__name__}: {e}"
         arr = result[0].squeeze(0)
-        if hasattr(arr, "detach"): arr = arr.detach().cpu()
+        if hasattr(arr, "detach"):
+            arr = arr.detach().cpu()
         audios.append(arr.numpy().astype(np.float32))
-    if not audios: return None, "No output."
+    if not audios:
+        return None, "No output."
     if pause and float(pause) > 0:
         silence = np.zeros(int(float(pause) * sampling_rate), dtype=np.float32)
         merged = audios[0]
-        for seg in audios[1:]: merged = np.concatenate([merged, silence, seg], 0)
+        for seg in audios[1:]:
+            merged = np.concatenate([merged, silence, seg], 0)
     else:
         merged = np.concatenate(audios, 0)
     waveform = np.clip(merged, -1, 1)
     return (sampling_rate, (waveform * 32767).astype(np.int16)), f"Done. {len(turns)} lines."
 
+
 def speaker_box_visibility(num_speakers):
     n = int(num_speakers or 2)
     return [gr.update(visible=(i <= n)) for i in range(1, 5)]
 
+
 def append_tag_to_text(text, tag):
     t = text or ""
-    if not tag: return t, None
-    if not t: return tag, None
+    if not tag:
+        return t, gr.update(value=None)
+    if not t:
+        return tag, gr.update(value=None)
     sep = "" if t.endswith((" ", "\n")) else " "
-    return f"{t}{sep}{tag}", None
+    return f"{t}{sep}{tag}", gr.update(value=None)
+
 
 def tag_insert_js():
     return """
@@ -245,64 +283,53 @@ def tag_insert_js():
 }
 """.strip()
 
+
 def place_vc_tag_row_js():
     return """
 () => {
-  const group = document.getElementById("vc_tag_group");
-  if (!group) return null;
+  const row = document.getElementById("vc_tag_row");
+  if (!row) return null;
 
-  const findTargetBlock = () => {
-    // Primary target: textbox whose placeholder mentions synthesize.
-    const textareas = Array.from(document.querySelectorAll("textarea"));
-    const targetTextarea = textareas.find((el) =>
-      (el.getAttribute("placeholder") || "").toLowerCase().includes("synthesize")
-    );
-    if (targetTextarea) {
-      return targetTextarea.closest("[data-testid='textbox']") || targetTextarea.closest(".block") || targetTextarea.parentElement;
+  // Find the "Text to Synthesize" textbox block and place row right under it.
+  const labels = Array.from(document.querySelectorAll("label, span, p, div"));
+  const marker = labels.find((el) => (el.textContent || "").trim() === "Text to Synthesize");
+  if (!marker) return null;
+
+  let targetBlock = marker;
+  while (targetBlock && targetBlock !== document.body) {
+    if (targetBlock.querySelector && targetBlock.querySelector("textarea, input[type='text']")) {
+      break;
     }
+    targetBlock = targetBlock.parentElement;
+  }
+  if (!targetBlock || !targetBlock.parentElement) return null;
 
-    // Fallback: any label containing "Text to Synthesize".
-    const labels = Array.from(document.querySelectorAll("label, span, p, div"));
-    const marker = labels.find((el) =>
-      (el.textContent || "").toLowerCase().includes("text to synthesize")
-    );
-    if (!marker) return null;
-    return marker.closest("[data-testid='textbox']") || marker.closest(".block") || marker.parentElement;
-  };
-
-  let tries = 0;
-  const timer = setInterval(() => {
-    const targetBlock = findTargetBlock();
-    if (targetBlock && targetBlock.parentElement) {
-      targetBlock.insertAdjacentElement("afterend", group);
-      clearInterval(timer);
-      return;
-    }
-    tries += 1;
-    if (tries >= 30) clearInterval(timer);
-  }, 100);
-
+  targetBlock.insertAdjacentElement("afterend", row);
   return null;
 }
 """.strip()
 
+
 # --- Gradio/Spaces Wrap ---
 
 @spaces.GPU(duration=60)
-def generate_fn(*a, **kw): return synthesize(*a, **kw)
+def generate_fn(*a, **kw):
+    return synthesize(*a, **kw)
+
 
 @spaces.GPU(duration=120)
-def generate_dialogue_fn(*a, **kw): return synthesize_dialogue(*a, **kw)
+def generate_dialogue_fn(*a, **kw):
+    return synthesize_dialogue(*a, **kw)
+
 
 # --- Build App UI ---
 
 demo = build_demo(model, ckpt, generate_fn=generate_fn)
 with demo:
-    with gr.Column(elem_id="vc_tag_group"):
-        with gr.Row(elem_id="vc_tag_row"):
-            vc_tag = gr.Dropdown(label="Insert Tag", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
-            vc_btn = gr.Button("Insert", scale=1, min_width=80)
-        gr.Markdown("Tip: use these to insert non-verbal tags into Text to Synthesize. You can also type tags manually (e.g. `[laughter]`).")
+    with gr.Row(elem_id="vc_tag_row"):
+        vc_tag = gr.Dropdown(label="Insert Tag", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
+        vc_btn = gr.Button("Insert", scale=1, min_width=80)
+    gr.Markdown("Tip: use these to insert non-verbal tags into Text to Synthesize. You can also type tags manually (e.g. `[laughter]`).")
     vc_btn.click(fn=None, inputs=[vc_tag], outputs=[vc_tag], js=tag_insert_js())
     demo.load(fn=None, js=place_vc_tag_row_js())
     with gr.Tabs():
@@ -330,13 +357,17 @@ with demo:
             spk_boxes, spk_audio, spk_ref, spk_instr, spk_lang = [], [], [], [], []
             with gr.Row():
                 for i in range(1, 5):
-                    with gr.Column(visible=i<=2) as box:
+                    with gr.Column(visible=i <= 2) as box:
                         gr.Markdown(f"**Speaker {i}**")
                         a = gr.Audio(label=f"Speaker {i} Reference Audio (optional)", type="filepath")
                         r = gr.Textbox(label=f"Speaker {i} Reference Text (optional)", lines=2, placeholder="Leave empty for ASR.")
                         ins = gr.Textbox(label=f"Speaker {i} Style Instruction (optional)", lines=2, placeholder="e.g. female, low pitch, accent")
                         lang = gr.Dropdown(label=f"Speaker {i} Language", choices=LANGUAGES, value="Auto", allow_custom_value=True, info="Auto uses global language.")
-                        spk_boxes.append(box); spk_audio.append(a); spk_ref.append(r); spk_instr.append(ins); spk_lang.append(lang)
+                        spk_boxes.append(box)
+                        spk_audio.append(a)
+                        spk_ref.append(r)
+                        spk_instr.append(ins)
+                        spk_lang.append(lang)
             d_run = gr.Button("Generate Dialogue", variant="primary")
             d_audio = gr.Audio(label="Dialogue Output")
             d_status = gr.Textbox(label="Status", interactive=False)
@@ -356,9 +387,10 @@ with demo:
             )
 
 if __name__ == "__main__":
-    launch_args = {"inbrowser": False}
+    launch_args = {"inbrowser": False, "share": False}
     host = os.environ.get("OMNIVOICE_HOST", "127.0.0.1")
     launch_args["server_name"] = host
     port = env_int("OMNIVOICE_PORT", "PORT", "GRADIO_SERVER_PORT")
-    if port: launch_args["server_port"] = port
+    if port:
+        launch_args["server_port"] = port
     demo.queue().launch(**launch_args)
