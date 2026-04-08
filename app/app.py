@@ -246,69 +246,6 @@ def append_tag_to_text(text, tag):
     return f"{t}{sep}{tag}", gr.update(value=None)
 
 
-def tag_insert_js():
-    return """
-(selectedTag) => {
-  if (!selectedTag) return null;
-  const isEditableTextInput = (el) => {
-    if (!el) return false;
-    const isTextarea = el.tagName === "TEXTAREA";
-    const isTextInput = el.tagName === "INPUT" && el.type === "text";
-    return (isTextarea || isTextInput) && !el.readOnly && !el.disabled;
-  };
-  if (!window.__omvTagFocusListener) {
-    window.__omvTagFocusListener = true;
-    window.__omvLastTextInput = null;
-    document.addEventListener("focusin", (ev) => {
-      const el = ev.target;
-      if (isEditableTextInput(el)) window.__omvLastTextInput = el;
-    });
-  }
-  const active = document.activeElement;
-  const el = isEditableTextInput(active) ? active : window.__omvLastTextInput;
-  if (!isEditableTextInput(el)) return null;
-  const v = el.value || "";
-  const start = el.selectionStart ?? v.length, end = el.selectionEnd ?? v.length;
-  const left = v.slice(0, start), right = v.slice(end);
-  const needsL = left.length > 0 && !/[\\s\\n]$/.test(left);
-  const needsR = right.length > 0 && !/^[\\s\\n]/.test(right);
-  const ins = `${needsL ? " " : ""}${selectedTag}${needsR ? " " : ""}`;
-  const newVal = left + ins + right;
-  const caret = (left + ins).length;
-  el.value = newVal; el.selectionStart = caret; el.selectionEnd = caret;
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
-  el.focus();
-  return null;
-}
-""".strip()
-
-
-def place_vc_tag_row_js():
-    return """
-() => {
-  const row = document.getElementById("vc_tag_row");
-  if (!row) return null;
-
-  // Find the "Text to Synthesize" textbox block and place row right under it.
-  const labels = Array.from(document.querySelectorAll("label, span, p, div"));
-  const marker = labels.find((el) => (el.textContent || "").trim() === "Text to Synthesize");
-  if (!marker) return null;
-
-  let targetBlock = marker;
-  while (targetBlock && targetBlock !== document.body) {
-    if (targetBlock.querySelector && targetBlock.querySelector("textarea, input[type='text']")) {
-      break;
-    }
-    targetBlock = targetBlock.parentElement;
-  }
-  if (!targetBlock || !targetBlock.parentElement) return null;
-
-  targetBlock.insertAdjacentElement("afterend", row);
-  return null;
-}
-""".strip()
-
 
 # --- Gradio/Spaces Wrap ---
 
@@ -337,12 +274,6 @@ if not hasattr(demo, "queue") or not hasattr(demo, "launch"):
     )
 
 with demo:
-    with gr.Row(elem_id="vc_tag_row"):
-        vc_tag = gr.Dropdown(label="Insert Tag", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
-        vc_btn = gr.Button("Insert", scale=1, min_width=80)
-    gr.Markdown("Tip: use these to insert non-verbal tags into Text to Synthesize. You can also type tags manually (e.g. `[laughter]`).")
-    vc_btn.click(fn=None, inputs=[vc_tag], outputs=[vc_tag], js=tag_insert_js())
-    demo.load(fn=None, js=place_vc_tag_row_js())
     with gr.Tabs():
         with gr.Tab("Dialogue"):
             gr.Markdown("Generate multi-speaker dialogue with `[Speaker_N]:` tags and per-speaker voice cloning.")
