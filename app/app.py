@@ -245,6 +245,31 @@ def tag_insert_js():
 }
 """.strip()
 
+def place_vc_tag_row_js():
+    return """
+() => {
+  const row = document.getElementById("vc_tag_row");
+  if (!row) return null;
+
+  // Find the "Text to Synthesize" textbox block and place row right under it.
+  const labels = Array.from(document.querySelectorAll("label, span, p, div"));
+  const marker = labels.find((el) => (el.textContent || "").trim() === "Text to Synthesize");
+  if (!marker) return null;
+
+  let targetBlock = marker;
+  while (targetBlock && targetBlock !== document.body) {
+    if (targetBlock.querySelector && targetBlock.querySelector("textarea, input[type='text']")) {
+      break;
+    }
+    targetBlock = targetBlock.parentElement;
+  }
+  if (!targetBlock || !targetBlock.parentElement) return null;
+
+  targetBlock.insertAdjacentElement("afterend", row);
+  return null;
+}
+""".strip()
+
 # --- Gradio/Spaces Wrap ---
 
 @spaces.GPU(duration=60)
@@ -257,17 +282,13 @@ def generate_dialogue_fn(*a, **kw): return synthesize_dialogue(*a, **kw)
 
 demo = build_demo(model, ckpt, generate_fn=generate_fn)
 with demo:
-    with gr.Row():
-        tag_picker = gr.Dropdown(label="Quick Tag Insert", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
-        tag_btn = gr.Button("Insert Into Focused Text Box", scale=2, min_width=180)
-    tag_btn.click(fn=None, inputs=[tag_picker], outputs=[tag_picker], js=tag_insert_js())
+    with gr.Row(elem_id="vc_tag_row"):
+        vc_tag = gr.Dropdown(label="Insert Tag", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
+        vc_btn = gr.Button("Insert", scale=1, min_width=80)
+    gr.Markdown("Tip: use these to insert non-verbal tags into Text to Synthesize. You can also type tags manually (e.g. `[laughter]`).")
+    vc_btn.click(fn=None, inputs=[vc_tag], outputs=[vc_tag], js=tag_insert_js())
+    demo.load(fn=None, js=place_vc_tag_row_js())
     with gr.Tabs():
-        with gr.Tab("Voice Clone"):
-            with gr.Row():
-                vc_tag = gr.Dropdown(label="Insert Tag", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
-                vc_btn = gr.Button("Insert", scale=1, min_width=80)
-            gr.Markdown("Tip: use these for non-verbal tags into the text. You can also type tags manually (e.g. `[laughter]`).")
-            vc_btn.click(fn=None, inputs=[vc_tag], outputs=[vc_tag], js=tag_insert_js())
         with gr.Tab("Dialogue"):
             gr.Markdown("Generate multi-speaker dialogue with `[Speaker_N]:` tags and per-speaker voice cloning.")
             script = gr.Textbox(label="Dialogue Script", lines=10, value="[Speaker_1]: Hello, I'm speaker one.\n[Speaker_2]: Hi! I'm speaker two.", placeholder="[Speaker_1]: First line\n[Speaker_2]: Reply...")
