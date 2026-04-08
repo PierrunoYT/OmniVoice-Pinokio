@@ -5,6 +5,7 @@
 ## What it does
 
 - Installs **PyTorch** via `torch.js` (per platform), then Python deps from `app/requirements.txt` (including `omnivoice`).
+- Validated against **`omnivoice>=0.1.3,<0.2`** and **`gradio>=5.0,<7`**. These pins live in `app/requirements.txt` — bump them there and re-run **Install** or **Update** when upgrading.
 - Starts the **Gradio** UI from **`app/app.py`** (same flow as the [Hugging Face Space](https://huggingface.co/spaces/k2-fsa/OmniVoice)).
 - Uses **one** Pinokio virtual environment: **`env/`** at the **project root** (not under `app/`). If you see both `env/` and `app/env/`, remove `app/env/` and rely on **Install** so PyTorch and packages live in the root `env/` only.
 

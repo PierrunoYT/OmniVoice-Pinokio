@@ -324,7 +324,18 @@ def generate_dialogue_fn(*a, **kw):
 
 # --- Build App UI ---
 
-demo = build_demo(model, ckpt, generate_fn=generate_fn)
+_build_result = build_demo(model, ckpt, generate_fn=generate_fn)
+if isinstance(_build_result, (tuple, list)):
+    demo = _build_result[0]
+else:
+    demo = _build_result
+
+if not hasattr(demo, "queue") or not hasattr(demo, "launch"):
+    raise RuntimeError(
+        f"build_demo() returned {type(demo).__name__!r} which does not expose "
+        f"queue()/launch(). Expected a Gradio Blocks instance. Check omnivoice version."
+    )
+
 with demo:
     with gr.Row(elem_id="vc_tag_row"):
         vc_tag = gr.Dropdown(label="Insert Tag", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
