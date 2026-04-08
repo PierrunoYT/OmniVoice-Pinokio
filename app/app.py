@@ -248,24 +248,40 @@ def tag_insert_js():
 def place_vc_tag_row_js():
     return """
 () => {
-  const row = document.getElementById("vc_tag_row");
-  if (!row) return null;
+  const group = document.getElementById("vc_tag_group");
+  if (!group) return null;
 
-  // Find the "Text to Synthesize" textbox block and place row right under it.
-  const labels = Array.from(document.querySelectorAll("label, span, p, div"));
-  const marker = labels.find((el) => (el.textContent || "").trim() === "Text to Synthesize");
-  if (!marker) return null;
-
-  let targetBlock = marker;
-  while (targetBlock && targetBlock !== document.body) {
-    if (targetBlock.querySelector && targetBlock.querySelector("textarea, input[type='text']")) {
-      break;
+  const findTargetBlock = () => {
+    // Primary target: textbox whose placeholder mentions synthesize.
+    const textareas = Array.from(document.querySelectorAll("textarea"));
+    const targetTextarea = textareas.find((el) =>
+      (el.getAttribute("placeholder") || "").toLowerCase().includes("synthesize")
+    );
+    if (targetTextarea) {
+      return targetTextarea.closest("[data-testid='textbox']") || targetTextarea.closest(".block") || targetTextarea.parentElement;
     }
-    targetBlock = targetBlock.parentElement;
-  }
-  if (!targetBlock || !targetBlock.parentElement) return null;
 
-  targetBlock.insertAdjacentElement("afterend", row);
+    // Fallback: any label containing "Text to Synthesize".
+    const labels = Array.from(document.querySelectorAll("label, span, p, div"));
+    const marker = labels.find((el) =>
+      (el.textContent || "").toLowerCase().includes("text to synthesize")
+    );
+    if (!marker) return null;
+    return marker.closest("[data-testid='textbox']") || marker.closest(".block") || marker.parentElement;
+  };
+
+  let tries = 0;
+  const timer = setInterval(() => {
+    const targetBlock = findTargetBlock();
+    if (targetBlock && targetBlock.parentElement) {
+      targetBlock.insertAdjacentElement("afterend", group);
+      clearInterval(timer);
+      return;
+    }
+    tries += 1;
+    if (tries >= 30) clearInterval(timer);
+  }, 100);
+
   return null;
 }
 """.strip()
@@ -282,10 +298,11 @@ def generate_dialogue_fn(*a, **kw): return synthesize_dialogue(*a, **kw)
 
 demo = build_demo(model, ckpt, generate_fn=generate_fn)
 with demo:
-    with gr.Row(elem_id="vc_tag_row"):
-        vc_tag = gr.Dropdown(label="Insert Tag", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
-        vc_btn = gr.Button("Insert", scale=1, min_width=80)
-    gr.Markdown("Tip: use these to insert non-verbal tags into Text to Synthesize. You can also type tags manually (e.g. `[laughter]`).")
+    with gr.Column(elem_id="vc_tag_group"):
+        with gr.Row(elem_id="vc_tag_row"):
+            vc_tag = gr.Dropdown(label="Insert Tag", choices=TAG_CHOICES, value=None, allow_custom_value=False, scale=5)
+            vc_btn = gr.Button("Insert", scale=1, min_width=80)
+        gr.Markdown("Tip: use these to insert non-verbal tags into Text to Synthesize. You can also type tags manually (e.g. `[laughter]`).")
     vc_btn.click(fn=None, inputs=[vc_tag], outputs=[vc_tag], js=tag_insert_js())
     demo.load(fn=None, js=place_vc_tag_row_js())
     with gr.Tabs():
