@@ -364,15 +364,34 @@ def _insert_tag_into_focused_js() -> str:
     return """
 (selectedTag) => {
   if (!selectedTag) return null;
-  const active = document.activeElement;
-  if (!active) return null;
-  const isTextarea = active.tagName === "TEXTAREA";
-  const isTextInput = active.tagName === "INPUT" && active.type === "text";
-  if (!isTextarea && !isTextInput) return null;
+  const isEditableTextInput = (el) => {
+    if (!el) return false;
+    const isTextarea = el.tagName === "TEXTAREA";
+    const isTextInput = el.tagName === "INPUT" && el.type === "text";
+    return (isTextarea || isTextInput) && !el.readOnly && !el.disabled;
+  };
 
-  const value = active.value || "";
-  const start = active.selectionStart ?? value.length;
-  const end = active.selectionEnd ?? value.length;
+  // Cache the last focused text input so button clicks can still insert.
+  if (!window.__omniVoiceTagFocusListenerInstalled) {
+    window.__omniVoiceTagFocusListenerInstalled = true;
+    window.__omniVoiceLastFocusedTextInput = null;
+    document.addEventListener("focusin", (event) => {
+      const target = event?.target;
+      if (isEditableTextInput(target)) {
+        window.__omniVoiceLastFocusedTextInput = target;
+      }
+    });
+  }
+
+  const active = document.activeElement;
+  const target = isEditableTextInput(active)
+    ? active
+    : window.__omniVoiceLastFocusedTextInput;
+  if (!isEditableTextInput(target)) return null;
+
+  const value = target.value || "";
+  const start = target.selectionStart ?? value.length;
+  const end = target.selectionEnd ?? value.length;
   const left = value.slice(0, start);
   const right = value.slice(end);
   const needsLeftSpace = left.length > 0 && !/[\\s\\n]$/.test(left);
@@ -381,12 +400,12 @@ def _insert_tag_into_focused_js() -> str:
   const nextValue = left + insertion + right;
   const caretPos = (left + insertion).length;
 
-  active.value = nextValue;
-  active.selectionStart = caretPos;
-  active.selectionEnd = caretPos;
-  active.dispatchEvent(new Event("input", { bubbles: true }));
-  active.dispatchEvent(new Event("change", { bubbles: true }));
-  active.focus();
+  target.value = nextValue;
+  target.selectionStart = caretPos;
+  target.selectionEnd = caretPos;
+  target.dispatchEvent(new Event("input", { bubbles: true }));
+  target.dispatchEvent(new Event("change", { bubbles: true }));
+  target.focus();
   return null;
 }
 """.strip()
@@ -414,7 +433,7 @@ demo = build_demo(model, CHECKPOINT, generate_fn=generate_fn)
 with demo:
     with gr.Row():
         g_tag_picker = gr.Dropdown(
-            label="Quick Tag Insert (Single TTS + Dialogue)",
+            label="Quick Tag Insert",
             choices=NON_VERBAL_TAG_CHOICES,
             value=None,
             allow_custom_value=False,
@@ -428,6 +447,25 @@ with demo:
         js=_insert_tag_into_focused_js(),
     )
     with gr.Tabs():
+        with gr.Tab("Voice Clone"):
+            with gr.Row():
+                vc_tag_picker = gr.Dropdown(
+                    label="Insert Tag",
+                    choices=NON_VERBAL_TAG_CHOICES,
+                    value=None,
+                    allow_custom_value=False,
+                    scale=5,
+                )
+                vc_insert_tag = gr.Button("Insert", scale=1, min_width=80)
+            gr.Markdown(
+                "Tip: use these controls to insert non-verbal tags into the focused Voice Clone text input. You can also type tags manually (e.g. `[laughter]`)."
+            )
+            vc_insert_tag.click(
+                fn=None,
+                inputs=[vc_tag_picker],
+                outputs=[vc_tag_picker],
+                js=_insert_tag_into_focused_js(),
+            )
         with gr.Tab("Dialogue"):
             gr.Markdown(
                 "Generate multi-speaker dialogue with `[Speaker_N]:` tags and optional per-speaker voice cloning."
