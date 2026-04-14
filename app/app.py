@@ -105,6 +105,37 @@ sampling_rate = model.sampling_rate
 print("Model ready.")
 
 
+def to_waveform(audio_output):
+    """Normalize model output into a mono float32 waveform."""
+    obj = audio_output
+    while isinstance(obj, (list, tuple)):
+        if not obj:
+            raise ValueError("model returned an empty audio container")
+        obj = obj[0]
+
+    if hasattr(obj, "detach"):
+        arr = obj.detach().cpu().numpy()
+    else:
+        arr = np.asarray(obj)
+
+    arr = np.asarray(arr)
+    if arr.size == 0:
+        raise ValueError("model returned an empty audio array")
+
+    arr = np.squeeze(arr)
+    if arr.ndim == 0:
+        arr = arr.reshape(1)
+    elif arr.ndim > 1:
+        # Keep the longest axis as time, collapse the rest, and mix small channel dims.
+        time_axis = int(np.argmax(arr.shape))
+        if time_axis != arr.ndim - 1:
+            arr = np.moveaxis(arr, time_axis, -1)
+        arr = arr.reshape(-1, arr.shape[-1])
+        arr = arr.mean(axis=0) if arr.shape[0] <= 2 else arr[0]
+
+    return arr.astype(np.float32, copy=False)
+
+
 def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise, speed, duration, preproc, postproc, mode, ref_text=None):
     if not text or not str(text).strip():
         return None, "Input text required."
@@ -133,10 +164,10 @@ def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise,
         return None, f"Generation error: {type(e).__name__}: {e}"
     if not audio:
         return None, "Generation error: model returned no audio."
-    arr = audio[0].squeeze(0)
-    if hasattr(arr, "detach"):
-        arr = arr.detach().cpu()
-    wav = np.clip(arr.numpy(), -1.0, 1.0)
+    try:
+        wav = np.clip(to_waveform(audio), -1.0, 1.0)
+    except Exception as e:
+        return None, f"Generation error: invalid audio output ({type(e).__name__}: {e})"
     return (sampling_rate, (wav * 32767).astype(np.int16)), "Done."
 
 
@@ -214,10 +245,10 @@ def synthesize_dialogue(
             result = model.generate(**kw)
         except Exception as e:
             return None, f"Speaker {spk}, line {idx}: {type(e).__name__}: {e}"
-        arr = result[0].squeeze(0)
-        if hasattr(arr, "detach"):
-            arr = arr.detach().cpu()
-        audios.append(arr.numpy().astype(np.float32))
+        try:
+            audios.append(to_waveform(result))
+        except Exception as e:
+            return None, f"Speaker {spk}, line {idx}: invalid audio output ({type(e).__name__}: {e})"
     if not audios:
         return None, "No output."
     if pause and float(pause) > 0:
