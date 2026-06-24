@@ -162,7 +162,7 @@ def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise,
         audio = model.generate(**args)
     except Exception as e:
         return None, f"Generation error: {type(e).__name__}: {e}"
-    if not audio:
+    if audio is None:
         return None, "Generation error: model returned no audio."
     try:
         wav = np.clip(to_waveform(audio), -1.0, 1.0)
