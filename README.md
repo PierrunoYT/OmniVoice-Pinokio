@@ -5,7 +5,7 @@
 ## What it does
 
 - Installs **PyTorch** via `torch.js` (per platform), then Python deps from `app/requirements.txt` (including `omnivoice`).
-- Validated against **`omnivoice>=0.1.3,<0.2`** and **`gradio>=5.0,<7`**. These pins live in `app/requirements.txt` — bump them there and re-run **Install** or **Update** when upgrading.
+- Validated against **`omnivoice>=0.1.3,<0.2`**, **`gradio>=5.0,<7`** and **`transformers>=5.3,<6`**. These pins live in `app/requirements.txt` — bump them there and re-run **Install** or **Update** when upgrading.
 - Starts the **Gradio** UI from **`app/app.py`** (same flow as the [Hugging Face Space](https://huggingface.co/spaces/k2-fsa/OmniVoice)).
 - Uses **one** Pinokio virtual environment: **`env/`** at the **project root** (not under `app/`). If you see both `env/` and `app/env/`, remove `app/env/` and rely on **Install** so PyTorch and packages live in the root `env/` only.
 
@@ -22,7 +22,7 @@
 | Variable | Purpose |
 |----------|---------|
 | `OMNIVOICE_MODEL` | Hugging Face repo or checkpoint (default `k2-fsa/OmniVoice`). |
-| `OMNIVOICE_DEVICE` | Force `cuda`, `mps`, or `cpu` (default: auto cuda → mps → cpu). |
+| `OMNIVOICE_DEVICE` | Force `cuda`, `mps`, `directml`, or `cpu` (default: auto cuda → mps → directml → cpu). |
 | `OMNIVOICE_LOAD_ASR` | `0` / `false` to skip Whisper ASR (less VRAM; supply reference text for clone). |
 | `OMNIVOICE_HOST` | Gradio `server_name` (default **`127.0.0.1`**). Use `0.0.0.0` to listen on all interfaces. |
 | `OMNIVOICE_PORT`, `PORT`, `GRADIO_SERVER_PORT` | Gradio port (Pinokio sets `OMNIVOICE_PORT`). |
@@ -37,7 +37,7 @@ The first **Start** downloads checkpoints from the Hub (several GB). You may see
 
 ### Device (CPU vs GPU)
 
-Logs like **`Loading model ... to cpu`** mean PyTorch selected **CPU** (no usable CUDA/MPS, or CPU-only PyTorch). For **NVIDIA** acceleration, install with **Install** so `torch.js` installs the **CUDA** build, and ensure a recent GPU driver. You can force **`OMNIVOICE_DEVICE=cuda`** only if CUDA is actually available (`torch.cuda.is_available()`).
+Logs like **`Loading model ... to cpu`** mean PyTorch selected **CPU** (no usable CUDA/MPS/DirectML, or CPU-only PyTorch). For **NVIDIA** acceleration, install with **Install** so `torch.js` installs the **CUDA** build, and ensure a recent GPU driver. You can force **`OMNIVOICE_DEVICE=cuda`** only if CUDA is actually available (`torch.cuda.is_available()`). On **Windows + AMD**, `torch.js` installs **`torch-directml`** and the app auto-detects it (or force **`OMNIVOICE_DEVICE=directml`**).
 
 ## Programmatic access
 

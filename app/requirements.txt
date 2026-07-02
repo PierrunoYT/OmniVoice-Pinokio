@@ -1,4 +1,4 @@
-transformers==5.3
+transformers>=5.3,<6
 accelerate
 pydub
 soundfile

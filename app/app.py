@@ -54,7 +54,21 @@ TAG_CHOICES = [
     "[surprise-ah]", "[surprise-oh]", "[surprise-wa]", "[surprise-yo]", "[dissatisfaction-hnn]",
 ]
 
-_VALID_DEVICES = {"cuda", "mps", "cpu"}
+_VALID_DEVICES = {"cuda", "mps", "cpu", "directml"}
+
+
+def directml_device():
+    """Return the torch-directml device if the package is installed and usable, else None."""
+    try:
+        import torch_directml
+    except ImportError:
+        return None
+    try:
+        if torch_directml.is_available():
+            return torch_directml.device()
+    except Exception:
+        return None
+    return None
 
 
 def resolve_device(env_var=None):
@@ -65,12 +79,24 @@ def resolve_device(env_var=None):
                 f"(expected one of {_VALID_DEVICES}). Falling back to auto-detection.",
                 stacklevel=2,
             )
+        elif env_var == "directml":
+            dml = directml_device()
+            if dml is not None:
+                return dml
+            warnings.warn(
+                "OMNIVOICE_DEVICE=directml but torch-directml is not available. "
+                "Falling back to auto-detection.",
+                stacklevel=2,
+            )
         else:
             return env_var
     if torch.cuda.is_available():
         return "cuda"
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         return "mps"
+    dml = directml_device()
+    if dml is not None:
+        return dml
     return "cpu"
 
 
@@ -89,7 +115,13 @@ def env_int(*names):
     for name in names:
         raw = os.environ.get(name)
         if raw is not None and str(raw).strip() != "":
-            return int(str(raw).strip())
+            try:
+                return int(str(raw).strip())
+            except ValueError:
+                warnings.warn(
+                    f"{name}={raw!r} is not a valid integer; ignoring.",
+                    stacklevel=2,
+                )
     return None
 
 
@@ -304,8 +336,17 @@ if not hasattr(demo, "queue") or not hasattr(demo, "launch"):
         f"queue()/launch(). Expected a Gradio Blocks instance. Check omnivoice version."
     )
 
+def find_tabs(blocks):
+    """Return the first gr.Tabs container in a Blocks app, or None."""
+    for block in blocks.blocks.values():
+        if isinstance(block, gr.Tabs):
+            return block
+    return None
+
+
 with demo:
-    with gr.Tabs():
+    _tabs = find_tabs(demo) or gr.Tabs()
+    with _tabs:
         with gr.Tab("Dialogue"):
             gr.Markdown("Generate multi-speaker dialogue with `[Speaker_N]:` tags and per-speaker voice cloning.")
             script = gr.Textbox(label="Dialogue Script", lines=10, value="[Speaker_1]: Hello, I'm speaker one.\n[Speaker_2]: Hi! I'm speaker two.", placeholder="[Speaker_1]: First line\n[Speaker_2]: Reply...")
