@@ -71,6 +71,16 @@ def directml_device():
     return None
 
 
+def torch_device_available(name):
+    """Return True when the named torch backend can actually be used here."""
+    if name == "cuda":
+        return torch.cuda.is_available()
+    if name == "mps":
+        mps = getattr(torch.backends, "mps", None)
+        return bool(mps and mps.is_built() and mps.is_available())
+    return name == "cpu"
+
+
 def resolve_device(env_var=None):
     if env_var:
         if env_var not in _VALID_DEVICES:
@@ -88,11 +98,17 @@ def resolve_device(env_var=None):
                 "Falling back to auto-detection.",
                 stacklevel=2,
             )
-        else:
+        elif torch_device_available(env_var):
             return env_var
-    if torch.cuda.is_available():
+        else:
+            warnings.warn(
+                f"OMNIVOICE_DEVICE={env_var!r} was requested but that backend is not "
+                "available in this PyTorch install. Falling back to auto-detection.",
+                stacklevel=2,
+            )
+    if torch_device_available("cuda"):
         return "cuda"
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+    if torch_device_available("mps"):
         return "mps"
     dml = directml_device()
     if dml is not None:
@@ -106,22 +122,32 @@ def resolve_dtype(device):
 
 def env_bool(name, default=True):
     val = os.environ.get(name)
-    if val is None:
+    if val is None or not val.strip():
         return default
     return val.strip().lower() not in ["false", "0", "no", "off"]
 
 
-def env_int(*names):
+def env_int(*names, minimum=None, maximum=None):
     for name in names:
         raw = os.environ.get(name)
-        if raw is not None and str(raw).strip() != "":
-            try:
-                return int(str(raw).strip())
-            except ValueError:
-                warnings.warn(
-                    f"{name}={raw!r} is not a valid integer; ignoring.",
-                    stacklevel=2,
-                )
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            value = int(str(raw).strip())
+        except ValueError:
+            warnings.warn(
+                f"{name}={raw!r} is not a valid integer; ignoring.",
+                stacklevel=2,
+            )
+            continue
+        if (minimum is not None and value < minimum) or (maximum is not None and value > maximum):
+            warnings.warn(
+                f"{name}={raw!r} is outside the allowed range "
+                f"[{minimum}, {maximum}]; ignoring.",
+                stacklevel=2,
+            )
+            continue
+        return value
     return None
 
 
@@ -168,6 +194,14 @@ def to_waveform(audio_output):
     return arr.astype(np.float32, copy=False)
 
 
+def to_int16_pcm(waveform):
+    """Sanitize a float waveform (NaN/inf included) and convert it to 16-bit PCM."""
+    wav = np.nan_to_num(
+        np.asarray(waveform, dtype=np.float32), nan=0.0, posinf=1.0, neginf=-1.0
+    )
+    return (np.clip(wav, -1.0, 1.0) * 32767.0).astype(np.int16)
+
+
 def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise, speed, duration, preproc, postproc, mode, ref_text=None):
     if not text or not str(text).strip():
         return None, "Input text required."
@@ -197,10 +231,10 @@ def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise,
     if audio is None:
         return None, "Generation error: model returned no audio."
     try:
-        wav = np.clip(to_waveform(audio), -1.0, 1.0)
+        wav = to_waveform(audio)
     except Exception as e:
         return None, f"Generation error: invalid audio output ({type(e).__name__}: {e})"
-    return (sampling_rate, (wav * 32767).astype(np.int16)), "Done."
+    return (sampling_rate, to_int16_pcm(wav)), "Done."
 
 
 def parse_dialogue(script):
@@ -285,13 +319,13 @@ def synthesize_dialogue(
         return None, "No output."
     if pause and float(pause) > 0:
         silence = np.zeros(int(float(pause) * sampling_rate), dtype=np.float32)
-        merged = audios[0]
+        segments = [audios[0]]
         for seg in audios[1:]:
-            merged = np.concatenate([merged, silence, seg], 0)
+            segments.extend((silence, seg))
     else:
-        merged = np.concatenate(audios, 0)
-    waveform = np.clip(merged, -1, 1)
-    return (sampling_rate, (waveform * 32767).astype(np.int16)), f"Done. {len(turns)} lines."
+        segments = audios
+    merged = np.concatenate(segments, 0) if len(segments) > 1 else segments[0]
+    return (sampling_rate, to_int16_pcm(merged)), f"Done. {len(turns)} lines."
 
 
 def speaker_box_visibility(num_speakers):
@@ -404,7 +438,7 @@ if __name__ == "__main__":
     launch_args = {"inbrowser": False, "share": False}
     host = os.environ.get("OMNIVOICE_HOST", "127.0.0.1")
     launch_args["server_name"] = host
-    port = env_int("OMNIVOICE_PORT", "PORT", "GRADIO_SERVER_PORT")
+    port = env_int("OMNIVOICE_PORT", "PORT", "GRADIO_SERVER_PORT", minimum=1, maximum=65535)
     if port:
         launch_args["server_port"] = port
     demo.queue().launch(**launch_args)
