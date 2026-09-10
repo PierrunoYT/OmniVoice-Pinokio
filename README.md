@@ -22,10 +22,10 @@
 | Variable | Purpose |
 |----------|---------|
 | `OMNIVOICE_MODEL` | Hugging Face repo or checkpoint (default `k2-fsa/OmniVoice`). |
-| `OMNIVOICE_DEVICE` | Force `cuda`, `mps`, `directml`, or `cpu` (default: auto cuda → mps → directml → cpu). |
+| `OMNIVOICE_DEVICE` | Force `cuda`, `mps`, `directml`, or `cpu` (default: auto cuda → mps → directml → cpu). Unknown or unavailable values fall back to auto-detection with a warning. |
 | `OMNIVOICE_LOAD_ASR` | `0` / `false` to skip Whisper ASR (less VRAM; supply reference text for clone). |
 | `OMNIVOICE_HOST` | Gradio `server_name` (default **`127.0.0.1`**). Use `0.0.0.0` to listen on all interfaces. |
-| `OMNIVOICE_PORT`, `PORT`, `GRADIO_SERVER_PORT` | Gradio port (Pinokio sets `OMNIVOICE_PORT`). |
+| `OMNIVOICE_PORT`, `PORT`, `GRADIO_SERVER_PORT` | Gradio port, `1`-`65535` (Pinokio sets `OMNIVOICE_PORT`). Unparseable or out-of-range values are ignored with a warning and Gradio picks the port. |
 
 ### Hugging Face downloads (first run)
 
@@ -37,7 +37,7 @@ The first **Start** downloads checkpoints from the Hub (several GB). You may see
 
 ### Device (CPU vs GPU)
 
-Logs like **`Loading model ... to cpu`** mean PyTorch selected **CPU** (no usable CUDA/MPS/DirectML, or CPU-only PyTorch). For **NVIDIA** acceleration, install with **Install** so `torch.js` installs the **CUDA** build, and ensure a recent GPU driver. You can force **`OMNIVOICE_DEVICE=cuda`** only if CUDA is actually available (`torch.cuda.is_available()`). On **Windows + AMD**, `torch.js` installs **`torch-directml`** and the app auto-detects it (or force **`OMNIVOICE_DEVICE=directml`**).
+Logs like **`Loading model ... to cpu`** mean PyTorch selected **CPU** (no usable CUDA/MPS/DirectML, or CPU-only PyTorch). For **NVIDIA** acceleration, install with **Install** so `torch.js` installs the **CUDA** build, and ensure a recent GPU driver. Forcing **`OMNIVOICE_DEVICE=cuda`** (or `mps`) only takes effect when that backend is actually available; otherwise the app warns and falls back to auto-detection rather than failing to load. On **Windows + AMD**, `torch.js` installs **`torch-directml`** and the app auto-detects it (or force **`OMNIVOICE_DEVICE=directml`**).
 
 ## Programmatic access
 

@@ -49,6 +49,12 @@ outputs/
 *.flac
 *.ogg
 
+# Agent / assistant tooling
+.claude/
+.codex/
+.gemini/
+.open-edit/
+
 # IDE & Editors
 .vscode/
 .idea/
