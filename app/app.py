@@ -221,7 +221,10 @@ def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise,
     if mode == "clone":
         if not ref_audio:
             return None, "Reference audio required for cloning."
-        args["voice_clone_prompt"] = model.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text, preprocess_prompt=bool(preproc))
+        try:
+            args["voice_clone_prompt"] = model.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text, preprocess_prompt=bool(preproc))
+        except Exception as e:
+            return None, f"Reference audio error: {type(e).__name__}: {e}"
     if instruct and str(instruct).strip():
         args["instruct"] = str(instruct).strip()
     try:
@@ -303,7 +306,10 @@ def synthesize_dialogue(
         instr = (cfg.get("instr") or "").strip()
         if ref_audio:
             if spk not in prompts:
-                prompts[spk] = model.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text or None, preprocess_prompt=bool(preprocess))
+                try:
+                    prompts[spk] = model.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text or None, preprocess_prompt=bool(preprocess))
+                except Exception as e:
+                    return None, f"Speaker {spk} reference audio error: {type(e).__name__}: {e}"
             kw["voice_clone_prompt"] = prompts[spk]
         if instr:
             kw["instruct"] = instr
