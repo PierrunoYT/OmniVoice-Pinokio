@@ -222,8 +222,8 @@ def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise,
         if not ref_audio:
             return None, "Reference audio required for cloning."
         args["voice_clone_prompt"] = model.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text)
-    if mode == "design" and instruct and str(instruct).strip():
-        args["instruct"] = instruct.strip()
+    if instruct and str(instruct).strip():
+        args["instruct"] = str(instruct).strip()
     try:
         audio = model.generate(**args)
     except Exception as e:
