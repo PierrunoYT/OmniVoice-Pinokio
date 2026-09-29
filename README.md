@@ -32,7 +32,7 @@
 The first **Start** downloads checkpoints from the Hub (several GB). You may see:
 
 - **`Warning: You are sending unauthenticated requests`** — set a [Hugging Face token](https://huggingface.co/settings/tokens) as **`HF_TOKEN`** in Pinokio (environment / secrets) or in your user environment so Hub rate limits are higher and downloads are faster.
-- **Slow transfer** — this launcher sets **`HF_HUB_ENABLE_HF_TRANSFER=1`** in `start.js` (uses the `hf_transfer` package from `app/requirements.txt`).
+- **Slow transfer** — this launcher sets **`HF_XET_HIGH_PERFORMANCE=1`** in `start.js` (Xet high-performance mode; `hf_transfer` / `HF_HUB_ENABLE_HF_TRANSFER` are no longer used by `huggingface_hub` 1.x).
 - **Mirror (e.g. region / connectivity)** — optional: `HF_ENDPOINT` (see [OmniVoice README](https://github.com/k2-fsa/OmniVoice) for `hf-mirror` and similar).
 
 ### Device (CPU vs GPU)

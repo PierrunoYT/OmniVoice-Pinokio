@@ -9,7 +9,7 @@ module.exports = {
         env: {
           PYTHONUNBUFFERED: "1",
           OMNIVOICE_PORT: "{{port}}",
-          HF_HUB_ENABLE_HF_TRANSFER: "1",
+          HF_XET_HIGH_PERFORMANCE: "1",
         },
         message: ["python app/app.py"],
         on: [

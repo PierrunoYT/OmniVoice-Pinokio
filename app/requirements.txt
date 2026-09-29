@@ -4,5 +4,4 @@ pydub
 soundfile
 numpy
 gradio>=5.0,<7
-hf_transfer
 omnivoice>=0.1.3,<0.2
