@@ -207,7 +207,7 @@ def synthesize(text, language, ref_audio, instruct, num_step, guidance, denoise,
         return None, "Input text required."
     gen_conf = OmniVoiceGenerationConfig(
         num_step=int(num_step or 32),
-        guidance_scale=float(guidance or 2.0),
+        guidance_scale=float(guidance) if guidance is not None else 2.0,
         denoise=bool(denoise),
         preprocess_prompt=bool(preproc),
         postprocess_output=bool(postproc),
@@ -281,7 +281,7 @@ def synthesize_dialogue(
     global_lang = language if language and language != "Auto" else None
     gen_conf = OmniVoiceGenerationConfig(
         num_step=int(num_step or 32),
-        guidance_scale=float(guidance or 2.0),
+        guidance_scale=float(guidance) if guidance is not None else 2.0,
         denoise=bool(denoise),
         preprocess_prompt=bool(preprocess),
         postprocess_output=bool(postprocess),
