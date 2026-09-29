@@ -11,7 +11,7 @@
 
 ## Using in Pinokio
 
-1. **Install** — creates `env/`, runs `uv pip install -r app/requirements.txt`, then `torch.js`.
+1. **Install** — creates `env/`, runs `torch.js` (platform-specific PyTorch), then `uv pip install -r app/requirements.txt`.
 2. **Start** — from the project root runs **`python app/app.py`** with **`OMNIVOICE_PORT={{port}}`** (next free port). Gradio binds to **`127.0.0.1`** by default; see environment variables below.
 3. **Update** — `git pull` (if this folder is a git repo), then `uv pip install -U -r app/requirements.txt`.
 4. **Reset** — removes `env/` for a clean reinstall.
