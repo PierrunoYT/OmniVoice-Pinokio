@@ -6,7 +6,24 @@ Rewritten from scratch for clarity.
 
 import os
 import re
+import socket
 import warnings
+
+
+def _hub_reachable(host="huggingface.co", port=443, timeout=3.0):
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+# Fall back to the local HF cache when offline. Must run before gradio,
+# transformers or huggingface_hub are imported, since they read it at import.
+if not os.environ.get("HF_HUB_OFFLINE") and not _hub_reachable():
+    print("Hugging Face Hub unreachable, using cached models (HF_HUB_OFFLINE=1).")
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
 
 import gradio as gr
 import numpy as np
