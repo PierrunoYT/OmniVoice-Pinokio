@@ -103,3 +103,6 @@ dmypy.json
 node_modules/
 runs/
 .open-edit-prefs.json
+.agents/
+package.json
+package-lock.json

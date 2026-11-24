@@ -1,7 +1,0 @@
-{
-  "name": "omnivoice-pinokio",
-  "private": true,
-  "devDependencies": {
-    "@veedstudio/openedit-cli": "0.2.0"
-  }
-}
