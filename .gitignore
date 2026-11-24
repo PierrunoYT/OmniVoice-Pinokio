@@ -100,3 +100,6 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+node_modules/
+runs/
+.open-edit-prefs.json
