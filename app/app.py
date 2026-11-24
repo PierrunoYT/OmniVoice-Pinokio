@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
-OmniVoice HuggingFace Space - Minimal app entrypoint.
-Rewritten from scratch for clarity.
+OmniVoice Pinokio entrypoint: upstream OmniVoice Gradio demo plus a
+multi-speaker Dialogue tab.
 """
 
 import os
 import re
 import socket
+import urllib.parse
+import urllib.request
 import warnings
 
 
-def _hub_reachable(host="huggingface.co", port=443, timeout=3.0):
+def _hub_reachable(timeout=3.0):
+    """Probe the configured Hub endpoint (HF_ENDPOINT honored) with a TCP connect."""
+    endpoint = urllib.parse.urlsplit(os.environ.get("HF_ENDPOINT") or "https://huggingface.co")
+    host = endpoint.hostname or "huggingface.co"
+    port = endpoint.port or (80 if endpoint.scheme == "http" else 443)
     try:
         socket.create_connection((host, port), timeout=timeout).close()
         return True
@@ -20,7 +26,12 @@ def _hub_reachable(host="huggingface.co", port=443, timeout=3.0):
 
 # Fall back to the local HF cache when offline. Must run before gradio,
 # transformers or huggingface_hub are imported, since they read it at import.
-if not os.environ.get("HF_HUB_OFFLINE") and not _hub_reachable():
+# Behind a proxy a direct connect can fail while the Hub is reachable, so skip.
+if (
+    not os.environ.get("HF_HUB_OFFLINE")
+    and not urllib.request.getproxies().get("https")
+    and not _hub_reachable()
+):
     print("Hugging Face Hub unreachable, using cached models (HF_HUB_OFFLINE=1).")
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
@@ -99,6 +110,7 @@ def torch_device_available(name):
 
 
 def resolve_device(env_var=None):
+    env_var = (env_var or "").strip().lower()
     if env_var:
         if env_var not in _VALID_DEVICES:
             warnings.warn(
